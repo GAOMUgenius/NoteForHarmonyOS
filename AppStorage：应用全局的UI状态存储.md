@@ -1,0 +1,140 @@
+# AppStorage：应用全局的UI状态存储
+
+## 引言
+
+AppStorage是应用全局的UI状态存储，是和应用的进程绑定的，由UI框架在应用程序启动时创建，为应用程序UI状态属性提供中央存储。AppStorage是应用级的全局状态共享，还相当于整个应用的“中枢”，持久化数据PersistentStorage和环境变量Environment都是通过AppStorage中转，才可以和UI交互。AppStorage是应用全局的UI状态存储，不同于@State等装饰器仅能在组件树上传递，AppStorage的目的是为了给开发者提供更大范围的跨ability基本的数据共享。
+
+## 概述
+
+AppStorage是在应用启动的时候会被创建的单例。它的目的是为了提供应用状态数据的中心存储，这些状态数据在应用级别都是可访问的。AppStorage将在应用运行过程保留其属性。属性通过唯一的键字符串值访问。
+
+AppStorage可以和UI组件同步，且可以在应用业务逻辑中被访问。
+
+AppStorage支持应用的主线程内多个UIAbility实例间的状态共享。
+
+AppStorage中的属性可以被双向同步，数据可以是存在于本地或远程设备上，并具有不同的功能。这些数据是通过业务逻辑中实现，与UI解耦，如果希望这些数据在UI中使用，需要用到@StorageProp和@StorageLink。
+
+## @StorageProp
+
+如果要建立AppStorage和自定义组件的联系，需要使用@StorageProp和@StorageLink装饰器。使用@StorageProp(key)/@StorageLink(key)装饰组件内的变量，key标识了AppStorage的属性。
+
+当自定义组件初始化的时候，会使用AppStorage中对应key的属性值将@StorageProp(key)/@StorageLink(key)装饰的变量初始化。由于应用逻辑的差异，无法确认是否在组件初始化之前向AppStorage实例中存入了对应的属性，所以AppStorage不一定存在key对应的属性，因此@StorageProp(key)/@StorageLink(key)装饰的变量进行本地初始化是必要的。
+
+@StorageProp(key)是和AppStorage中key对应的属性建立单向数据同步，允许本地改变，但是对于@StorageProp，本地的修改永远不会同步回AppStorage中，相反，如果AppStorage给定key的属性发生改变，改变会被同步给@StorageProp，并覆盖掉本地的修改。
+
+### 装饰器使用规则说明
+
+| @StorageProp变量装饰器 | 说明                                                         |
+| :--------------------- | :----------------------------------------------------------- |
+| 装饰器参数             | key：常量字符串，必填（字符串需要有引号）。                  |
+| 允许装饰的变量类型     | Object、class、string、number、boolean、enum类型，以及这些类型的数组。API12及以上支持Map、Set、Date类型。嵌套类型的场景请参考观察变化和行为表现。类型必须被指定，建议和AppStorage中对应属性类型相同，否则会发生类型隐式转换，从而导致应用行为异常。不支持any，API12及以上支持undefined和null类型。API12及以上支持上述支持类型的联合类型，比如string \| number, string \| undefined 或者 ClassA \| null，示例见AppStorage支持联合类型支持联合类型)。**注意**当使用undefined和null的时候，建议显式指定类型，遵循TypeScript类型校验，比如：@StorageProp("AA") a: number \| null = null是推荐的，不推荐@StorageProp("AA") a: number = null。 |
+| 同步类型               | 单向同步：从AppStorage的对应属性到组件的状态变量。组件本地的修改是允许的，但是AppStorage中给定的属性一旦发生变化，将覆盖本地的修改。 |
+| 被装饰变量的初始值     | 必须指定，如果AppStorage实例中不存在属性，则用该初始值初始化该属性，并存入AppStorage中。 |
+
+### 变量的传递/访问规则说明
+
+| 传递/访问            | 说明                                                         |
+| :------------------- | :----------------------------------------------------------- |
+| 从父节点初始化和更新 | 禁止，@StorageProp不支持从父节点初始化，只能AppStorage中key对应的属性初始化，如果没有对应key的话，将使用本地默认值初始化。 |
+| 初始化子节点         | 支持，可用于初始化@State、@Link、@Prop、@Provide。           |
+| 是否支持组件外访问   | 否。                                                         |
+
+### 观察变化和行为表现
+
+**观察变化**
+
+- 当装饰的数据类型为boolean、string、number类型时，可以观察到数值的变化。
+- 当装饰的数据类型为class或者Object时，可以观察到对象整体赋值和对象属性变化。
+- 当装饰的对象是array时，可以观察到数组添加、删除、更新数组单元的变化。
+- 当装饰的对象是Date时，可以观察到Date整体的赋值，同时可通过调用Date的接口setFullYear, setMonth, setDate, setHours, setMinutes, setSeconds, setMilliseconds, setTime, setUTCFullYear, setUTCMonth, setUTCDate, setUTCHours, setUTCMinutes, setUTCSeconds, setUTCMilliseconds 更新Date的属性。
+- 当装饰的变量是Map时，可以观察到Map整体的赋值，同时可通过调用Map的接口set, clear, delete 更新Map的值。
+- 当装饰的变量是Set时，可以观察到Set整体的赋值，同时可通过调用Set的接口add, clear, delete 更新Set的值。
+
+**框架行为**
+
+- 当@StorageProp(key)装饰的数值改变被观察到时，修改不会被同步回AppStorage对应key的属性中。
+- 当前@StorageProp(key)单向绑定的数据会被修改，即仅限于当前组件的私有成员变量改变，其他绑定该key的数据不会同步改变。
+- 当@StorageProp(key)装饰的数据本身是状态变量，它的改变虽然不会同步回AppStorage中，但是会引起所属的自定义组件重新渲染。
+- 当AppStorage中key对应的属性发生改变时，会同步给所有@StorageProp(key)装饰的数据，@StorageProp(key)本地的修改将被覆盖。
+
+## @StorageLink
+
+@StorageLink(key)是和AppStorage中key对应的属性建立双向数据同步：
+
+1. 本地修改发生，该修改会被写回AppStorage中。
+2. AppStorage中的修改发生后，该修改会被同步到所有绑定AppStorage对应key的属性上，包括单向（@StorageProp和通过Prop创建的单向绑定变量）、双向（@StorageLink和通过Link创建的双向绑定变量）变量和其他实例（比如PersistentStorage）。
+
+### 装饰器使用规则说明
+
+| @StorageLink变量装饰器 | 说明                                                         |
+| :--------------------- | :----------------------------------------------------------- |
+| 装饰器参数             | key：常量字符串，必填（字符串需要有引号）。                  |
+| 允许装饰的变量类型     | Object、class、string、number、boolean、enum类型，以及这些类型的数组。API12及以上支持Map、Set、Date类型。嵌套类型的场景请参考观察变化和行为表现。类型必须被指定，建议和AppStorage中对应属性类型相同，否则会发生类型隐式转换，从而导致应用行为异常。不支持any，API12及以上支持undefined和null类型。API12及以上支持上述支持类型的联合类型，比如string \| number, string \| undefined 或者 ClassA \| null，示例见AppStorage支持联合类型。**注意**当使用undefined和null的时候，建议显式指定类型，遵循TypeScript类型校验，比如：@StorageLink("AA") a: number \| null = null是推荐的，不推荐@StorageLink("AA") a: number = null。 |
+| 同步类型               | 双向同步：从AppStorage的对应属性到自定义组件，从自定义组件到AppStorage对应属性。 |
+| 被装饰变量的初始值     | 必须指定，如果AppStorage实例中不存在属性，则用该初始值初始化该属性，并存入AppStorage中。 |
+
+### 变量的传递/访问规则说明
+
+| 传递/访问            | 说明                                                         |
+| :------------------- | :----------------------------------------------------------- |
+| 从父节点初始化和更新 | 禁止。                                                       |
+| 初始化子节点         | 支持，可用于初始化常规变量、@State、@Link、@Prop、@Provide。 |
+| 是否支持组件外访问   | 否。                                                         |
+
+### 观察变化和行为表现
+
+**观察变化**
+
+- 当装饰的数据类型为boolean、string、number类型时，可以观察到数值的变化。
+- 当装饰的数据类型为class或者Object时，可以观察到对象整体赋值和对象属性变化。
+- 当装饰的对象是array时，可以观察到数组添加、删除、更新数组单元的变化。
+- 当装饰的对象是Date时，可以观察到Date整体的赋值，同时可通过调用Date的接口setFullYear, setMonth, setDate, setHours, setMinutes, setSeconds, setMilliseconds, setTime, setUTCFullYear, setUTCMonth, setUTCDate, setUTCHours, setUTCMinutes, setUTCSeconds, setUTCMilliseconds 更新Date的属性。
+- 当装饰的变量是Map时，可以观察到Map整体的赋值，同时可通过调用Map的接口set, clear, delete 更新Map的值。
+- 当装饰的变量是Set时，可以观察到Set整体的赋值，同时可通过调用Set的接口add, clear, delete 更新Set的值。
+
+**框架行为**
+
+1. 当@StorageLink(key)装饰的数值改变被观察到时，修改将被同步回AppStorage对应属性键值key的属性中。
+2. AppStorage中属性键值key对应的数据一旦改变，属性键值key绑定的所有的数据（包括双向@StorageLink和单向@StorageProp）都将同步修改。
+3. 当@StorageLink(key)装饰的数据本身是状态变量，它的改变不仅仅会同步回AppStorage中，还会引起所属的自定义组件的重新渲染。
+
+## 简单运用
+
+1. 我拥有一个想要成为全局变量的UserAccount类的对象，现在可以进行注册
+
+```typescript
+AppStorage.setOrCreate('UserAccount', new UserAccount());
+```
+
+2. 后续想要获得这个变量，就可以使用get方法
+
+```typescript
+userAccount: UserAccount | undefined = AppStorage.get('UserAccount')
+```
+
+3. 若是想要更改的话
+
+```typescript
+AppStorage.setOrCreate('PropA', 47);
+
+let storage: LocalStorage = new LocalStorage();
+storage.setOrCreate('PropA',17);
+let propA: number | undefined = AppStorage.get('PropA') // propA in AppStorage == 47, propA in LocalStorage == 17
+let link1: SubscribedAbstractProperty<number> = AppStorage.link('PropA'); // link1.get() == 47
+let link2: SubscribedAbstractProperty<number> = AppStorage.link('PropA'); // link2.get() == 47
+let prop: SubscribedAbstractProperty<number> = AppStorage.prop('PropA'); // prop.get() == 47
+
+link1.set(48); // 双向同步: link1.get() == link2.get() == prop.get() == 48
+prop.set(1); // 单向同步: prop.get() == 1; 但 link1.get() == link2.get() == 48
+link1.set(49); // 双向同步: link1.get() == link2.get() == prop.get() == 49
+
+storage.get<number>('PropA') // == 17
+storage.set('PropA', 101);
+storage.get<number>('PropA') // == 101
+
+AppStorage.get<number>('PropA') // == 49
+link1.get() // == 49
+link2.get() // == 49
+prop.get() // == 49
+```
+
